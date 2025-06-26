@@ -25,16 +25,20 @@ class TreeNode:
         self.health_status = health_status  # 健康状态
 
     def __hash__(self):
-        return hash(self.tree_id)
+        return hash((self.tree_id, self.species, self.age, self.health_status))
+
+    def __eq__(self, other):
+        if not isinstance(other, TreeNode):
+            return False
+        return (self.tree_id == other.tree_id and 
+                self.species == other.species and
+                self.age == other.age and
+                self.health_status == other.health_status)
 
     def __repr__(self):
         # 返回树的字符串表示
         return (f"TreeNode(ID={self.tree_id}, Species={self.species}, Age={self.age}, "
                 f"Health={self.health_status.name})")
-
-    def __eq__(self, other):
-        # 比较两个树节点是否相等（基于 tree_id）
-        return self.tree_id == other.tree_id
 
     def __lt__(self, other):
         # 比较两个树节点的大小（基于 tree_id）
@@ -466,9 +470,6 @@ class TestLoadForestData(unittest.TestCase):
 
 # 修改这部分代码
 if __name__ == '__main__':
-    # 确保使用正确的端口和主机设置
-    app.run_server(debug=True, host='0.0.0.0', port=8050)
-
     base_dir = r"D:\python\2024秋小学期\森林\Project-1---Forest-Management-System\project"
     trees_file = os.path.join(base_dir, "forest_management_dataset-trees.csv")
     paths_file = os.path.join(base_dir, "forest_management_dataset-paths.csv")
