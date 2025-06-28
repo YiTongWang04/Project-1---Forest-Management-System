@@ -148,37 +148,45 @@ def find_conservation_areas(forest):
     return conservation_areas
 
 # Task 2: Infection Spread Simulation
-def simulate_infection_spread(forest, infected_tree, steps=None, callback=None):
-    """增强版感染传播模拟"""
-    visited = set()
-    queue = [(0, infected_tree)]  # (step, tree)
-    infected_tree.health_status = HealthStatus.INFECTED
-    visited.add(infected_tree)
-    
-    while queue:
-        step, current_tree = queue.pop(0)
-        if steps is not None and step >= steps:
-            break
-            
+def simulate_infection_spread(forest, start_tree, speed=1.0):
+    """
+    使用 Dijkstra 算法计算每棵树的最短传播时间。
+    返回：[(TreeNode, 时间秒数)]
+    """
+    import heapq
+    infection_time = {tree: float('inf') for tree in forest.nodes}
+    heap = []
+
+    heapq.heappush(heap, (0.0, start_tree))  # (time, node)
+    infection_time[start_tree] = 0.0
+    start_tree.health_status = HealthStatus.INFECTED
+
+    while heap:
+        current_time, current_node = heapq.heappop(heap)
+        
         for edge in forest.edges:
-            if edge.tree1 == current_tree:
+            if edge.tree1 == current_node:
                 neighbor = edge.tree2
-            elif edge.tree2 == current_tree:
+            elif edge.tree2 == current_node:
                 neighbor = edge.tree1
             else:
                 continue
-                
-            if neighbor not in visited and neighbor.health_status != HealthStatus.INFECTED:
+
+            travel_time = edge.distance / speed
+            total_time = current_time + travel_time
+
+            if total_time < infection_time[neighbor]:
+                infection_time[neighbor] = total_time
                 neighbor.health_status = HealthStatus.INFECTED
-                visited.add(neighbor)
-                queue.append((step+1, neighbor))
-                
-                if callback:  # 每感染一棵树调用回调函数
-                    callback(neighbor, step+1)
+                heapq.heappush(heap, (total_time, neighbor))
+
+    # 返回按感染时间排序的列表
+    return sorted([(node, round(time, 2)) for node, time in infection_time.items() if time < float('inf')], key=lambda x: x[1])
 
 # Task 3: Path Finding
 def find_shortest_path(forest, start_tree, end_tree):
     distances = {tree: float('inf') for tree in forest.nodes}
+    previous = {tree: None for tree in forest.nodes}  # 新增：记录前驱节点
     distances[start_tree] = 0
     priority_queue = [(0, start_tree)]
     visited = set()
@@ -190,7 +198,7 @@ def find_shortest_path(forest, start_tree, end_tree):
         visited.add(current_tree)
 
         if current_tree == end_tree:
-            return current_distance
+            break  # 找到目标节点后提前退出
 
         for edge in forest.edges:
             if edge.tree1 == current_tree:
@@ -202,9 +210,18 @@ def find_shortest_path(forest, start_tree, end_tree):
             distance = current_distance + edge.distance
             if distance < distances[neighbor]:
                 distances[neighbor] = distance
+                previous[neighbor] = current_tree  # 记录前驱节点
                 heapq.heappush(priority_queue, (distance, neighbor))
 
-    return float('inf')
+    # 回溯构建路径
+    path = []
+    node = end_tree
+    while node:
+        path.append(node)
+        node = previous[node]
+    path.reverse()  # 反转路径顺序
+
+    return path, distances[end_tree] if end_tree in distances else float('inf')
 
 # Task 4: Graphical Interface
 def interactive_visualize(forest):
@@ -227,7 +244,7 @@ def interactive_visualize(forest):
             delta = pos[tree2] - pos[tree1]
             dist = np.linalg.norm(delta)
             if dist > min_dist:  # 添加距离检查
-                force = k * (dist - edge.distance) * delta / max(dist, min_dist)  # 防止除以0
+                force = k * (dist - edge.distance) * delta / max(dist, min__dist)  # 防止除以0
                 spring_forces[tree1] += force
                 spring_forces[tree2] -= force
         
@@ -456,7 +473,6 @@ class TestShortestPath(unittest.TestCase):
 
 class TestLoadForestData(unittest.TestCase):
     def test_load_forest_data(self):
-        # 使用相对路径（假设CSV文件与Q1.py在同一目录）
         trees_file_path = "forest_management_dataset-trees.csv"
         paths_file_path = "forest_management_dataset-paths.csv"
         
@@ -468,7 +484,6 @@ class TestLoadForestData(unittest.TestCase):
         self.assertIsNotNone(forest)
         self.assertIsInstance(forest, ForestGraph)
 
-# 修改这部分代码
 if __name__ == '__main__':
     base_dir = r"D:\python\2024秋小学期\森林\Project-1---Forest-Management-System\project"
     trees_file = os.path.join(base_dir, "forest_management_dataset-trees.csv")
@@ -483,7 +498,11 @@ if __name__ == '__main__':
         forest = load_forest_data(trees_file, paths_file)
         interactive_visualize(forest)
     
-    unittest.main()
+    # 修改unittest.main()的调用方式
+    try:
+        unittest.main(exit=False)  # 设置exit=False防止程序退出
+    except SystemExit:
+        pass  # 捕获SystemExit异常
 
 
 class TestExtraFeatures(unittest.TestCase):

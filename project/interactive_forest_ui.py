@@ -116,6 +116,7 @@ app.layout = html.Div([
         html.Div([
             html.H4("模拟感染"),
             html.Label("感染起点ID"), dcc.Input(id='infect-id', type='number'),
+            html.Label("传播速度（距离/秒）"), dcc.Input(id='spread-speed', type='number', value=5, min=0.1),
             html.Button("开始传播", id='simulate-btn')
         ], style={'width': '32%', 'display': 'inline-block'}),
 
@@ -137,9 +138,13 @@ app.layout = html.Div([
 
     html.Div([
         html.Div([
-            html.H4("森林健康状态分析"),
+            html.H4("森林健康与树种统计"),
             html.Button("显示统计图", id='stat-btn'),
-            dcc.Graph(id='health-stats')
+            
+            html.Div([
+                dcc.Graph(id='health-stats', style={'width': '48%', 'display': 'inline-block'}),
+                dcc.Graph(id='species-stats', style={'width': '48%', 'display': 'inline-block'}),
+            ])
         ], style={'width': '100%', 'display': 'inline-block'})
     ]),
 
@@ -250,19 +255,26 @@ def remove_path(n, sid, eid):
     Output('result-text', 'children', allow_duplicate=True),
     Input('simulate-btn', 'n_clicks'),
     State('infect-id', 'value'),
+    State('spread-speed', 'value'),
     prevent_initial_call=True
 )
-def simulate_infection(n, infect_id):
+def simulate_infection(n, infect_id, speed):
     try:
+        speed = float(speed or 1.0)
+        if speed <= 0:
+            return dash.no_update, "❌ 传播速度必须大于0", ""
+
         start = next(t for t in forest.nodes if t.tree_id == int(infect_id))
-        simulate_infection_spread(forest, start)
+        infection_result = simulate_infection_spread(forest, start, speed)
+
         fig = generate_figure()
-        result = f"感染传播完成，感染起点ID: {infect_id}\n"
-        infected_trees = [t.tree_id for t in forest.nodes if t.health_status == HealthStatus.INFECTED]
-        result += f"感染树木数量: {len(infected_trees)}\n感染树ID列表: {infected_trees}"
-        return fig, "感染传播完成", result
+        result_lines = [f"感染传播完成，起点ID: {infect_id}\n传播速度: {speed} 距离/秒\n按传播时间排序："]
+        for tree, time in infection_result:
+            result_lines.append(f"ID{tree.tree_id}，{time}s 感染")
+
+        return fig, "🦠 感染传播完成", "\n".join(result_lines)
     except Exception as e:
-        return dash.no_update, f"传播失败: {str(e)}", ""
+        return dash.no_update, f"❌ 传播失败: {str(e)}", ""
 
 @app.callback(
     Output('forest-graph', 'figure', allow_duplicate=True),
@@ -277,10 +289,21 @@ def show_shortest_path(n, sid, eid):
     try:
         t1 = next(t for t in forest.nodes if t.tree_id == int(sid))
         t2 = next(t for t in forest.nodes if t.tree_id == int(eid))
-        dist = find_shortest_path(forest, t1, t2)
-        fig = generate_figure(path_nodes={t1, t2})
-        result = f"最短路径查询:\n起点ID: {sid}\n终点ID: {eid}\n最短距离: {dist:.2f}"
-        return fig, f"最短距离为: {dist:.2f}", result
+        path, total_dist = find_shortest_path(forest, t1, t2)
+
+        # 构建结果字符串
+        result_lines = [f"最短路径查询:\n起点ID: {sid}\n终点ID: {eid}\n总距离: {total_dist:.2f}\n路径详情："]
+        for i in range(len(path) - 1):
+            # 找出段距离
+            edge = next(e for e in forest.edges if 
+                        (e.tree1 == path[i] and e.tree2 == path[i+1]) or 
+                        (e.tree1 == path[i+1] and e.tree2 == path[i]))
+            result_lines.append(f"从ID{path[i].tree_id}到ID{path[i+1].tree_id} 距离: {edge.distance:.2f}")
+        result_text = "\n".join(result_lines)
+
+        fig = generate_figure(path_nodes=set(path))
+        return fig, f"最短距离为: {total_dist:.2f}", result_text
+
     except Exception as e:
         return dash.no_update, f"路径查找失败: {str(e)}", ""
 
@@ -303,14 +326,16 @@ def show_conservation(n):
 
 @app.callback(
     Output('health-stats', 'figure'),
+    Output('species-stats', 'figure'),
     Input('stat-btn', 'n_clicks'),
     prevent_initial_call=True
 )
 def show_stats(n):
     total = len(forest.nodes)
     if total == 0:
-        return go.Figure()
+        return go.Figure(), go.Figure()
 
+    # 健康状态统计
     status_count = {
         'HEALTHY': sum(1 for t in forest.nodes if t.health_status == HealthStatus.HEALTHY),
         'INFECTED': sum(1 for t in forest.nodes if t.health_status == HealthStatus.INFECTED),
@@ -321,14 +346,27 @@ def show_stats(n):
     values = [status_count['HEALTHY'], status_count['AT_RISK'], status_count['INFECTED']]
     colors = ['green', 'yellow', 'red']
 
-    fig = go.Figure(data=[go.Pie(
+    pie_fig = go.Figure(data=[go.Pie(
         labels=labels,
         values=values,
         hole=0.3,
         marker=dict(colors=colors)
     )])
-    fig.update_layout(title="健康状态分布")
-    return fig
+    pie_fig.update_layout(title="健康状态分布")
+
+    # 树种统计
+    species_count = {}
+    for tree in forest.nodes:
+        species_count[tree.species] = species_count.get(tree.species, 0) + 1
+
+    bar_fig = go.Figure(data=[go.Bar(
+        x=list(species_count.keys()),
+        y=list(species_count.values()),
+        marker_color='lightblue'
+    )])
+    bar_fig.update_layout(title="树种分布", xaxis_title="树种", yaxis_title="数量")
+
+    return pie_fig, bar_fig
 
 
 @app.callback(
