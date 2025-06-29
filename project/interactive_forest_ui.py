@@ -9,6 +9,8 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent))  
 
 from forest_module import ForestGraph, TreeNode, TreePath, HealthStatus, simulate_infection_spread, find_conservation_areas, find_shortest_path, load_forest_data
+import pandas as pd
+import os
 
 app = dash.Dash(__name__, suppress_callback_exceptions=True)
 server = app.server
@@ -21,10 +23,16 @@ positions = {}
 initial_forest_state = None
 
 # 工具函数：更新图形
-def generate_figure(highlight_nodes=None, path_nodes=None):
+def generate_figure(highlight_nodes=None, path_nodes=None, highlight_paths=None):
     global positions
     pos = {tree: np.array([tree.tree_id * 10, tree.age], dtype=float) for tree in forest.nodes}
     positions = pos
+
+    # 计算每个节点的连接度
+    degree_map = {tree: 0 for tree in forest.nodes}
+    for edge in forest.edges:
+        degree_map[edge.tree1] += 1
+        degree_map[edge.tree2] += 1
 
     fig = go.Figure()
     
@@ -34,16 +42,24 @@ def generate_figure(highlight_nodes=None, path_nodes=None):
         x1, y1 = pos[edge.tree2]
         mid_x, mid_y = (x0 + x1) / 2, (y0 + y1) / 2  # 中点坐标
 
-        # 画线
+        # 路径颜色优先级判断：感染 > 最短路径 > 默认
+        if highlight_nodes and (edge.tree1 in highlight_nodes and edge.tree2 in highlight_nodes):
+            color = 'red'  # 感染路径
+        elif highlight_paths and edge in highlight_paths:
+            color = 'blue'  # 最短路径边
+        else:
+            color = 'gray'
+
+        # 路径线
         fig.add_trace(go.Scatter(
             x=[x0, x1],
             y=[y0, y1],
             mode='lines',
-            line=dict(color='gray'),
+            line=dict(color=color, width=3),
             hoverinfo='none'
         ))
 
-        # 在路径中点添加距离文字
+        # 中点距离标签
         fig.add_trace(go.Scatter(
             x=[mid_x],
             y=[mid_y],
@@ -59,16 +75,19 @@ def generate_figure(highlight_nodes=None, path_nodes=None):
     for tree in forest.nodes:
         color = ['green', 'red', 'orange'][tree.health_status.value - 1]
         if highlight_nodes and tree in highlight_nodes:
-            color = 'blue'
+            color = 'red'  # 感染节点
         if path_nodes and tree in path_nodes:
-            color = 'purple'
+            color = 'blue'  # 最短路径节点
+
+        degree = degree_map.get(tree, 0)
+        size = 10 + degree * 5  # 基础大小为10，每增加一个连接度+5
 
         fig.add_trace(go.Scatter(
             x=[pos[tree][0]], y=[pos[tree][1]],
             mode='markers+text',
-            marker=dict(size=15, color=color),
+            marker=dict(size=size, color=color),
             text=[f"ID:{tree.tree_id}"], textposition="top center",
-            hovertext=f"Species: {tree.species}\nAge: {tree.age}\nStatus: {tree.health_status.name}",
+            hovertext=f"Species: {tree.species}\nAge: {tree.age}\nStatus: {tree.health_status.name}\n连接数: {degree}",
             hoverinfo="text"
         ))
     
@@ -150,10 +169,17 @@ app.layout = html.Div([
 
     html.Div([
         html.H4("初始状态操作"),
-        html.Button("保存为初始状态", id='save-init-btn'),
-        html.Button("恢复初始状态", id='restore-init-btn')
+        html.Button("保存为初始状态", id='save-init-btn', style={'marginRight': '10px'}),
+        html.Button("恢复初始状态", id='restore-init-btn', style={'marginRight': '10px'}),
+        html.Button("清空森林", id='clear-forest-btn', style={'backgroundColor': 'red', 'color': 'white'})
     ], style={'margin': '20px 0'}),
 
+    html.Div([
+        html.H4("导出森林数据到CSV"),
+        html.Button("导出数据", id='export-csv-btn'),
+    ], style={'border': '1px solid #ccc', 'padding': '10px', 'margin': '20px'}),
+    
+    # 恢复导入CSV数据部分
     html.Div([
         html.H4("导入CSV数据"),
         html.Label("树数据文件路径 (.csv):"),
@@ -165,8 +191,8 @@ app.layout = html.Div([
         html.Button("导入数据", id='import-csv-btn'),
     ], style={'border': '1px solid #ccc', 'padding': '10px', 'margin': '20px'}),
 
-    html.Div(id='action-feedback', style={'color': 'green', 'margin': '10px'})
-])
+        html.Div(id='action-feedback', style={'color': 'green', 'margin': '10px'})
+    ])
 
 
 @app.callback(
@@ -267,7 +293,15 @@ def simulate_infection(n, infect_id, speed):
         start = next(t for t in forest.nodes if t.tree_id == int(infect_id))
         infection_result = simulate_infection_spread(forest, start, speed)
 
-        fig = generate_figure()
+        # 找出所有被感染的节点和边
+        infected_nodes = set(t for t, _ in infection_result)
+        infected_edges = set()
+        for edge in forest.edges:
+            if edge.tree1 in infected_nodes and edge.tree2 in infected_nodes:
+                infected_edges.add(edge)
+
+        fig = generate_figure(highlight_nodes=infected_nodes, highlight_paths=infected_edges)
+        
         result_lines = [f"感染传播完成，起点ID: {infect_id}\n传播速度: {speed} 距离/秒\n按传播时间排序："]
         for tree, time in infection_result:
             result_lines.append(f"ID{tree.tree_id}，{time}s 感染")
@@ -291,18 +325,27 @@ def show_shortest_path(n, sid, eid):
         t2 = next(t for t in forest.nodes if t.tree_id == int(eid))
         path, total_dist = find_shortest_path(forest, t1, t2)
 
+        # 找出路径上的所有边
+        highlight_edges = set()
+        for i in range(len(path) - 1):
+            for edge in forest.edges:
+                if (edge.tree1 == path[i] and edge.tree2 == path[i+1]) or (edge.tree2 == path[i] and edge.tree1 == path[i+1]):
+                    highlight_edges.add(edge)
+                    break
+
+        fig = generate_figure(path_nodes=set(path), highlight_paths=highlight_edges)
+        
         # 构建结果字符串
         result_lines = [f"最短路径查询:\n起点ID: {sid}\n终点ID: {eid}\n总距离: {total_dist:.2f}\n路径详情："]
         for i in range(len(path) - 1):
-            # 找出段距离
-            edge = next(e for e in forest.edges if 
-                        (e.tree1 == path[i] and e.tree2 == path[i+1]) or 
-                        (e.tree1 == path[i+1] and e.tree2 == path[i]))
-            result_lines.append(f"从ID{path[i].tree_id}到ID{path[i+1].tree_id} 距离: {edge.distance:.2f}")
-        result_text = "\n".join(result_lines)
+            t1, t2 = path[i], path[i+1]
+            # 找出这对节点之间的唯一一条路径
+            for edge in forest.edges:
+                if (edge.tree1 == t1 and edge.tree2 == t2) or (edge.tree1 == t2 and edge.tree2 == t1):
+                    result_lines.append(f"从ID{t1.tree_id}到ID{t2.tree_id} 距离: {edge.distance:.2f}")
+                    break
 
-        fig = generate_figure(path_nodes=set(path))
-        return fig, f"最短距离为: {total_dist:.2f}", result_text
+        return fig, f"最短距离为: {total_dist:.2f}", "\n".join(result_lines)
 
     except Exception as e:
         return dash.no_update, f"路径查找失败: {str(e)}", ""
@@ -421,6 +464,55 @@ def restore_initial_state(n):
         return generate_figure(), "🔄 已恢复到初始状态"
     except Exception as e:
         return dash.no_update, f"❌ 恢复失败: {str(e)}"
+
+
+@app.callback(
+    Output('action-feedback', 'children', allow_duplicate=True),
+    Input('export-csv-btn', 'n_clicks'),
+    prevent_initial_call=True
+)
+def export_csv(n_clicks):
+    try:
+        export_dir = r"D:\python\2024秋小学期\森林\Project-1---Forest-Management-System\project"
+        os.makedirs(export_dir, exist_ok=True)
+
+        # 导出树节点数据
+        tree_data = [{
+            'tree_id': t.tree_id,
+            'species': t.species,
+            'age': t.age,
+            'health_status': t.health_status.name
+        } for t in forest.nodes]
+        df_tree = pd.DataFrame(tree_data)
+        df_tree.to_csv(os.path.join(export_dir, 'trees_export.csv'), index=False)
+
+        # 导出路径数据
+        path_data = [{
+            'tree_1': p.tree1.tree_id,
+            'tree_2': p.tree2.tree_id,
+            'distance': p.distance
+        } for p in forest.edges]
+        df_path = pd.DataFrame(path_data)
+        df_path.to_csv(os.path.join(export_dir, 'paths_export.csv'), index=False)
+
+        return "✅ 森林数据已成功导出到 trees_export.csv 和 paths_export.csv"
+    except Exception as e:
+        return f"❌ 导出失败: {str(e)}"
+
+
+@app.callback(
+    Output('forest-graph', 'figure', allow_duplicate=True),
+    Output('action-feedback', 'children', allow_duplicate=True),
+    Input('clear-forest-btn', 'n_clicks'),
+    prevent_initial_call=True
+)
+def clear_forest(n_clicks):
+    global forest
+    try:
+        forest = ForestGraph()  # 重置为新的空图
+        return generate_figure(), "✅ 森林已清空"
+    except Exception as e:
+        return dash.no_update, f"❌ 清空失败: {str(e)}"
 
 
 if __name__ == '__main__':
