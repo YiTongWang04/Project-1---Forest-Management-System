@@ -176,52 +176,56 @@ app.layout = html.Div(style={
 
     html.Hr(),
 
-    # 功能区布局调整
     html.Div([
-        # 第一行：统计图表和数据操作
         html.Div([
-            # 统计图表部分，占2/3宽度
+            html.H4("📊 Forest Health and Species Statistics"),
+            html.Button("Show Statistics", id='stat-btn', className="button"),
             html.Div([
-                html.H4("🌳 Forest Health and Species Statistics"),
-                # 使用flex布局让两个图横着排列
-                html.Div([
-                    # 健康状态统计图
-                    dcc.Graph(id='health-stats', figure={}, style={'height': '300px', 'flex': '1', 'paddingRight': '10px'}),
-                    # 树种统计图
-                    dcc.Graph(id='species-stats', figure={}, style={'height': '300px', 'flex': '1', 'paddingLeft': '10px'})
-                ], style={'display': 'flex', 'width': '100%', 'gap': '10px'}),
-                html.Button("Show Statistics", id='stat-btn', className="button", style={'marginTop': '10px'}),
-            ], style={'flex': '2', 'paddingRight': '20px'}),
+                dcc.Graph(id='health-stats', style={
+                    'flex': '1',
+                    'minWidth': '0',
+                    'height': '400px'
+                }),
+                dcc.Graph(id='species-stats', style={
+                    'flex': '1',
+                    'minWidth': '0',
+                    'height': '400px'
+                }),
+            ], className="stats-graphs-container", style={
+                'display': 'flex',
+                'gap': '20px',
+                'justifyContent': 'space-between',
+                'width': '100%'
+            })
+        ], className="stats-section-container", style={
+            'width': '100%',
+            'padding': '20px',
+            'marginBottom': '20px'
+        })
+    ], className="section"),
 
-            # 数据操作部分，占1/3宽度
-            html.Div([
-                html.H4("📁 Forest Data Operations"),
-                html.Div([
-                    # 导入部分
-                    html.Div([
-                        html.Label("Tree Data File Path (.csv):"),
-                        dcc.Input(id='tree-csv-path', type='text', placeholder='e.g. D:/data/trees.csv', style={'width': '100%', 'marginBottom': '10px'}, className="input-box"),
-                        html.Label("Path Data File Path (.csv):"),
-                        dcc.Input(id='path-csv-path', type='text', placeholder='e.g. D:/data/paths.csv', style={'width': '100%', 'marginBottom': '10px'}, className="input-box"),
-                        html.Button("Import Data", id='import-csv-btn', className="button"),
-                    ], style={'marginBottom': '20px'}),
+    html.Div([
+        html.H4("💾 Initial State Operations"),
+        html.Button("Save as Initial State", id='save-init-btn', className="button", style={'marginRight': '10px'}),
+        html.Button("Restore Initial State", id='restore-init-btn', className="button", style={'marginRight': '10px'}),
+        html.Button("Clear Forest", id='clear-forest-btn', className="button", style={'backgroundColor': '#c62828', 'color': 'white'})
+    ], style={'margin': '20px 0'}),
 
-                    # 导出部分
-                    html.Div([
-                        html.Button("Export Data", id='export-csv-btn', className="button"),
-                    ])
-                ], style={'display': 'flex', 'flexDirection': 'column', 'gap': '20px', 'marginTop': '20px'})
-            ], style={'flex': '1', 'borderLeft': '1px solid #ccc', 'paddingLeft': '20px'}),
-        ], style={'display': 'flex', 'width': '100%', 'marginTop': '20px'}),
+    html.Div([
+        html.H4("📁 Export Forest Data to CSV"),
+        html.Button("Export Data", id='export-csv-btn', className="button"),
+    ], className="section"),
 
-        # 第二行：初始状态操作
-        html.Div([
-            html.H4("💾 Initial State Operations"),
-            html.Button("Save as Initial State", id='save-init-btn', className="button", style={'marginRight': '10px'}),
-            html.Button("Restore Initial State", id='restore-init-btn', className="button", style={'marginRight': '10px'}),
-            html.Button("Clear Forest", id='clear-forest-btn', className="button", style={'backgroundColor': '#c62828', 'color': 'white'}),
-        ], className="section", style={'marginTop': '30px', 'display': 'flex', 'justifyContent': 'center', 'gap': '10px'}),
-    ], style={'width': '100%'}),
+    html.Div([
+        html.H4("📁 Import Forest Data from CSV"),
+        html.Label("Tree Data File Path (.csv):"),
+        dcc.Input(id='tree-csv-path', type='text', placeholder='e.g. D:/data/trees.csv', style={'width': '80%'}, className="input-box"),
+        html.Br(),
+        html.Label("Path Data File Path (.csv):"),
+        dcc.Input(id='path-csv-path', type='text', placeholder='e.g. D:/data/paths.csv', style={'width': '80%'}, className="input-box"),
+        html.Br(),
+        html.Button("Import Data", id='import-csv-btn', className="button"),
+    ], className="section"),
 
     html.Div(id='action-feedback', style={'color': '#1b5e20', 'margin': '10px'})
 ])
