@@ -13,24 +13,28 @@ class TestForestGraph(unittest.TestCase):
     def test_add_tree(self):
         self.forest.add_tree(self.tree1)
         self.assertIn(self.tree1, self.forest.nodes)
+        self.assertIn(self.tree1, self.forest.adjacency)
 
     def test_remove_tree(self):
         self.forest.add_tree(self.tree1)
         self.forest.remove_tree(self.tree1)
         self.assertNotIn(self.tree1, self.forest.nodes)
+        self.assertNotIn(self.tree1, self.forest.adjacency)
 
     def test_add_path(self):
         self.forest.add_tree(self.tree1)
         self.forest.add_tree(self.tree2)
         self.forest.add_path(self.path1)
-        self.assertIn(self.path1, self.forest.edges)
+        self.assertIn(self.path1, self.forest.adjacency[self.tree1])
+        self.assertIn(self.path1, self.forest.adjacency[self.tree2])
 
     def test_remove_path(self):
         self.forest.add_tree(self.tree1)
         self.forest.add_tree(self.tree2)
         self.forest.add_path(self.path1)
         self.forest.remove_path(self.path1)
-        self.assertNotIn(self.path1, self.forest.edges)
+        self.assertNotIn(self.path1, self.forest.adjacency[self.tree1])
+        self.assertNotIn(self.path1, self.forest.adjacency[self.tree2])
 
     def test_update_tree_health(self):
         self.forest.add_tree(self.tree1)
